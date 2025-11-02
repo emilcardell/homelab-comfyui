@@ -1,0 +1,53 @@
+version: "3.9"
+
+services:
+  # -----------------------------
+  # Step 1: Model Downloader
+  # -----------------------------
+  model-downloader:
+    image: alpine:3.20
+    container_name: model-downloader
+    volumes:
+      - ./models:/workspace/ComfyUI/models
+    command: >
+      sh -c "
+        apk add --no-cache wget &&
+        mkdir -p /workspace/ComfyUI/models/checkpoints &&
+        mkdir -p /workspace/ComfyUI/models/text_encoders &&
+        mkdir -p /workspace/ComfyUI/models/vae &&
+        echo '📦 Downloading Qwen-Image model weights...' &&
+        wget -O /workspace/ComfyUI/models/checkpoints/qwen_image_fp8_e4m3fn.safetensors
+          https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/diffusion_models/qwen_image_fp8_e4m3fn.safetensors &&
+        wget -O /workspace/ComfyUI/models/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors
+          https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/text_encoders/qwen_2.5_vl_7b_fp8_scaled.safetensors &&
+        wget -O /workspace/ComfyUI/models/vae/qwen_image_vae.safetensors
+          https://huggingface.co/Comfy-Org/Qwen-Image_ComfyUI/resolve/main/split_files/vae/qwen_image_vae.safetensors &&
+        echo '✅ All Qwen-Image model files downloaded successfully.'
+      "
+    restart: "no"
+
+  # -----------------------------
+  # Step 2: ComfyUI (ROCm build)
+  # -----------------------------
+  comfyui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: comfyui-rocm:latest
+    container_name: comfyui-rocm
+    depends_on:
+      - model-downloader
+    ports:
+      - "8188:8188"
+    environment:
+      - PORT=8188
+    volumes:
+      - ./models:/workspace/ComfyUI/models
+      - ./output:/workspace/ComfyUI/output
+    # ROCm access (ensure host kernel + container runtime supports GPU passthrough)
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    group_add:
+      - video
+    restart: unless-stopped
